@@ -1,0 +1,364 @@
+---
+title: "Final Project"
+author: "Zhi Tu"
+date: "2022-12-17"
+output:
+  pdf_document: default
+  
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(shiny, leaflet, magrittr, dplyr, tidyverse, googleway, mapsapi, ggplot2, kableExtra, knitr)
+
+```
+
+## Data from GTFS
+
+First, We get the data from the GTFS site: https://cdn.mbta.com/archive/archived_feeds.txt
+After examining all these files, stop_times, stops, directions, and trip are most useful to use. For example, I can left_join trip onto the stop_times by the column `trip_id`. Also,  I can left_join directions onto the stop_times by the column `route_id` and `direction_id`. Since the file uploaded onto github cannot exceed 100mb, I concise all the files under the limits.
+
+```{r, include=FALSE}
+## Get stop and stoptimes from GTFS
+# stoptime <- read.delim("MBTA_GTFS/stop_times.txt", sep = ",", header = TRUE)
+# stoptime1 <- read.delim("stoptimes/stop_times.txt", sep = ",", header = TRUE)
+# stoptime2 <- read.delim("stoptimes/stop_times_2.txt", sep = ",", header = TRUE)
+# stoptime3 <- read.delim("stoptimes/stop_times_3.txt", sep = ",", header = TRUE)
+# stoptime4 <- read.delim("stoptimes/stop_times_4.txt", sep = ",", header = TRUE)
+# stoptime5 <- read.delim("stoptimes/stop_times_5.txt", sep = ",", header = TRUE)
+
+# stoptime %<>% bind_rows(stoptime1)
+# stoptime %<>% bind_rows(stoptime2)
+# stoptime %<>% bind_rows(stoptime3)
+# stoptime %<>% bind_rows(stoptime4)
+# stoptime %<>% bind_rows(stoptime5)
+
+stoptime <- read.delim("stop_times_final.txt", sep = ",", header = TRUE,fill = TRUE)
+trip <- read.delim("trips.txt", sep = ",", header = TRUE)
+direction <- read.delim("directions.txt", sep = ",", header = TRUE)
+stop <- read.delim("stops.txt", sep = ",", header = TRUE,fill = TRUE)
+
+stoptime %<>% select(1:5)
+trip %<>% select(1:3,6)
+stoptime %<>% left_join(trip, by="trip_id")
+stoptime %<>% left_join(direction, by=c("route_id", "direction_id"))
+
+stoptime$departure_time <- (strptime(stoptime$departure_time, format = "%H:%M:%S"))
+stoptime %<>% select(-2,-7,-9,-10)
+```
+
+```{r, fig.cap="Stop times", echo=FALSE}
+head(stoptime) 
+```
+
+On the above is the head rows of processed stoptime
+
+```{r, include=FALSE}
+# write.csv(stoptime,"stoptime_final.csv")
+```
+
+
+## Bus 
+
+After getting all the stoptimes for different public transportation from GFTS, I would like to get stop informations.
+For buses, I read the bus stop info from site: https://mbta-massdot.opendata.arcgis.com/maps/MassDOT::mbta-systemwide-gtfs-map/about.
+After reading the file, I remove NAs in the Routes of buses and select columns with useful infos.
+
+```{r, include=FALSE}
+## Bus stops
+bus_stop <- read.csv("bus stop.csv")
+bus_stop %<>% filter(Routes != "" & Routes !="#N/A")
+bus_stop %<>% select(1,2,4,6,28)
+```
+
+```{r, include=FALSE}
+# write.csv(bus_stop,"bus_stop_final.csv")
+```
+
+Next, I find the processed bus arrival and departure times file on site:
+https://mbta-massdot.opendata.arcgis.com/datasets/mbta-bus-arrival-departure-times-2021/about.
+
+
+```{r, echo=FALSE, fig.cap="Bus Routes"}
+## Bus departure time
+# bus_1 <- read.csv("MBTA_Bus_Times_2021/MBTA-Bus-Arrival-Departure-Times_2021-01.csv")
+# bus_route01 <- bus_1 %>% filter(route_id=="01")
+bus_route01 <-  read.csv("route01_final.csv")
+bus_route01 %<>% select(3,9,4,11,12)
+head(bus_route01) 
+```
+
+As you can see, we need to convert the departure time on each stop to the time period between stops. Specifically, if the route has stop order from 1 to 9, then we need to have 8! combinations of time period to be calculated. 
+
+
+Then, we can left join the departure stop info and the arrival stop info onto the combination to get all the time period from all the routes of buses.
+
+```{r, include=FALSE}
+# ## Calculate travel time based on departure time
+# 
+# bus_route01_from <-  bus_route01 %>% rename("from_stop_id"=stop_id)
+# bus_route01_to <-  bus_route01 %>% rename("to_stop_id"=stop_id)
+# 
+# ## Get all combinations of stop orders
+# comb <- bus_route01 %>% 
+#   group_by(half_trip_id) %>% 
+#   summarise(stop_id = combn(stop_id, 2, simplify = F)) %>% 
+#   unnest_wider(stop_id, names_sep = "_")
+# 
+# ## Left join stop info onto stop orders
+# comb %<>% rename("from_stop_id"=stop_id_1, "to_stop_id"=stop_id_2)
+# bus_route01_from %<>% rename("start_time"=actual, "time_point_start"=time_point_order) %>% select(1:5,7,11)
+# comb %<>% left_join(bus_route01_from, by=c("from_stop_id","half_trip_id"))
+# bus_route01_to %<>%  rename("end_time"=actual, "time_point_end"=time_point_order) %>% select(4,5,7,11)
+# comb %<>% left_join(bus_route01_to, by=c("to_stop_id","half_trip_id"))
+# 
+# ## Calculate time period in minutes
+# comb$start_time <- as.character(comb$start_time)
+# comb$end_time <- as.character(comb$end_time)
+# comb %<>% filter(start_time!= "" & end_time!= "")
+# route01 <- comb %>% mutate(time= difftime(end_time, start_time,units="mins"))
+# route01$time <- as.numeric(route01$time)
+# route01$time <- round(route01$time,2)
+```
+
+
+
+```{r, include=FALSE}
+# write.csv(route01,"route01_final.csv")
+```
+
+\newpage
+
+## Ferry
+
+Next, we do the same thing for the ferry stop info. After getting the data, I found some names are named different across the file especially between the stop info and stoptimes. So I need to change one so that they can match to each other. 
+
+```{r, include=FALSE}
+## Ferry stops
+ferry_stop <- read.csv("ferry stop.csv")
+ferry_stop %<>% select(1:4, 6, 9, 13, 19, 14)
+ferry_stop$stop_name[ferry_stop$stop_name=="Long Wharf (North)"] <- "Long Wharf N"
+ferry_stop$stop_name[ferry_stop$stop_name=="Long Wharf (South)"] <- "Long Wharf S"
+ferry_stop$stop_name[ferry_stop$stop_name=="Logan Airport Ferry Terminal"] <- "Logan"
+ferry_stop %<>% slice(6) %>% mutate(stop_name="LOGAN") %>% bind_rows(ferry_stop)
+ferry_stop$stop_name[ferry_stop$stop_name=="George's Island"] <- "Georges"
+ferry_stop %>% select(1,2,4,5)
+```
+
+```{r, fig.cap="Ferry Stops"}
+head(ferry_stop) 
+```
+
+
+```{r, include=FALSE}
+# write.csv(ferry_stop,"ferry_stop_final.csv")
+```
+
+The data I got the daily info from:https://mbta-massdot.opendata.arcgis.com/search?tags=ferry
+I then clean the data so that it can be match to the ferry stop info file. 
+
+```{r, include=FALSE}
+## Ferry time travels
+# ferry_daily <- read.csv("MBTA_Ferry_Daily.csv")
+ferry_daily <- read.csv("ferry_daily_final.csv")
+ferry_stop_depart <- ferry_stop %>% mutate(departure_terminal= stop_name)
+
+ferry_daily$actual_departure <- as.character(ferry_daily$actual_departure)
+ferry_daily$actual_arrival <- as.character(ferry_daily$actual_arrival)
+ferry_daily %<>% filter(actual_departure!= "" & actual_arrival!= "")
+ferry_daily %<>% mutate(time= difftime(actual_arrival, actual_departure,units="mins"))
+ferry_daily$time <- as.numeric(ferry_daily$time)
+ferry_daily$time <- round(ferry_daily$time,2)
+ferry_daily %<>% filter(departure_terminal != "Navy Yard" & arrival_terminal != "Navy Yard")
+ferry_daily %<>% select(3,10,12, 17, 18, 23)
+```
+
+```{r, fig.cap="Ferry Travel Times"}
+head(ferry_daily)
+```
+
+```{r, include=FALSE}
+# write.csv(ferry_daily,"ferry_daily_final.csv")
+```
+
+\newpage 
+
+## Commuter Rail
+
+Commuter Rail is exactly same the buses, we need to calculate the time period based on the departure time.
+Here is the results:
+
+```{r, include=FALSE}
+## Commuter rail stop info
+rail_stop <- read.csv("rail stop.csv")
+rail_stop %<>% select(4,6, 10, 11)
+```
+
+```{r, fig.cap="Commuter Rail Stops"}
+head(rail_stop) 
+```
+
+
+```{r, include=FALSE}
+# write.csv(rail_stop,"rail_stop_final.csv")
+```
+
+```{r, include=FALSE}
+## Commuter rail time travels info
+## Get commuter rail time travels info from stoptimes
+rail_stoptime <- stoptime %>% filter(grepl( "CR-",route_id))
+
+rail_from <-  rail_stoptime %>% rename("from_stop_id"=stop_id)
+rail_to <-  rail_stoptime %>% rename("to_stop_id"=stop_id)
+
+## Get all combinations of stop orders
+comb_rail <- rail_stoptime %>% 
+  group_by(trip_id) %>% 
+  summarise(stop_id = combn(stop_id, 2, simplify = F)) %>% 
+  unnest_wider(stop_id, names_sep = "_")
+
+## Left join stop info onto stop orders
+comb_rail %<>% rename("from_stop_id"=stop_id_1, "to_stop_id"=stop_id_2)
+# rail_from %<>% rename("start_time"=departure_time, "time_point_start"=stop_sequence) %>% select(1,3:6,8,10)
+rail_from %<>% rename("start_time"=departure_time, "time_point_start"=stop_sequence)
+comb_rail %<>% left_join(rail_from, by=c("from_stop_id","trip_id"))
+rail_to %<>%  rename("end_time"=departure_time, "time_point_end"=stop_sequence) %>% select(1:4)
+comb_rail %<>% left_join(rail_to, by=c("to_stop_id","trip_id"))
+
+## Calculate time period in minutes
+# comb_rail$start_time <- as.character(comb_rail$start_time)
+# comb_rail$end_time <- as.character(comb_rail$end_time)
+# comb_rail %<>% filter(start_time!= "" & end_time!= "")
+# comb_rail$start_time <- (strptime(comb_rail$start_time, format = "%H:%M:%S"))
+# comb_rail$end_time <- (strptime(comb_rail$end_time, format = "%H:%M:%S"))
+rail <- comb_rail %>% mutate(time= difftime(end_time, start_time,units="mins"))
+rail$time <- as.numeric(rail$time)
+rail$time <- round(rail$time,2)
+rail %<>% select(6, 2, 4,3,8,10)
+```
+
+```{r, fig.cap="Commuter Rail Travel Times"}
+head(rail) 
+```
+
+
+```{r, include=FALSE}
+# write.csv(rail,"rail_final.csv")
+```
+
+\newpage
+
+## MTBA data
+
+Lastly, we got the MTBA data from the travel time file: https://mbta-massdot.opendata.arcgis.com/datasets/mbta-travel-times-2021/about
+
+
+```{r, include=FALSE}
+## Rapid Transit travel times
+# tt_q1_2021 <- read.csv("Travel_Times_2021/HRTravelTimesQ1_21.csv")
+# tt_q1_2021_lr <- read.csv("Travel_Times_2021/LRTravelTimesQ1_21.csv")
+
+# tt_q4_2021 <- read.csv("Travel_Times_2021/HRTravelTimesQ4_21.csv")
+# tt_q4_2021_lr <- read.csv("Travel_Times_2021/LRTravelTimesQ4_21.csv")
+# dates_1 <- c("2021-10-01", "2021-10-04",
+#              "2021-11-02", "2021-11-05", "2021-12-07")
+# tt_q4_2021_lr %<>% filter(service_date %in% dates_1)
+# tt_q4_2021 %<>% filter(service_date %in% dates_1)
+# tt_q4_2021_lr %<>% bind_rows(tt_q4_2021)
+
+# tt_q1_2022 <- read.csv("TravelTimes_2022/2022-Q1_HRTravelTimes.csv")
+# tt_q1_2022_lr <- read.csv("TravelTimes_2022/2022-Q1_LRTravelTimes.csv")
+# dates_2 <- c("2022-01-01", "2022-01-02","2022-01-03","2022-01-04","2022-01-07",
+#              "2022-02-01", "2022-02-04","2022-02-05","2022-02-06","2022-02-07",
+#              "2022-03-03", "2022-03-04","2022-03-05","2022-03-06","2022-03-07")
+# tt_q1_2022_lr %<>% filter(service_date %in% dates_2)
+# tt_q1_2022 %<>% filter(service_date %in% dates_2)
+# tt_q1_2022_lr %<>% bind_rows(tt_q1_2022)
+
+
+# tt_q2_2022 <- read.csv("TravelTimes_2022/2022-Q2_HRTravelTimes.csv")
+# tt_q2_2022_lr <- read.csv("TravelTimes_2022/2022-Q2_LRTravelTimes.csv")
+# dates_3 <- c("2022-04-02", "2022-04-03","2022-04-05","2022-04-06",
+#              "2022-05-01", "2022-05-02","2022-05-03","2022-05-04",
+#              "2022-06-01", "2022-06-05","2022-06-06","2022-06-07")
+# tt_q2_2022_lr %<>% filter(service_date %in% dates_3)
+# tt_q2_2022 %<>% filter(service_date %in% dates_3)
+# tt_q2_2022_lr %<>% bind_rows(tt_q2_2022)
+# 
+# 
+# tt_q3_2022 <- read.csv("TravelTimes_2022/2022-Q3_HRTravelTimes.csv")
+# tt_q3_2022_lr <- read.csv("TravelTimes_2022/2022-Q3_LRTravelTimes.csv")
+# dates_4 <- c("2022-07-04", "2022-07-05","2022-07-06","2022-07-07",
+#              "2022-08-01", "2022-08-02","2022-08-04","2022-08-06",
+#              "2022-09-01", "2022-09-05","2022-09-06","2022-09-07")
+# tt_q3_2022_lr %<>% filter(service_date %in% dates_4)
+# tt_q3_2022 %<>% filter(service_date %in% dates_4)
+# tt_q3_2022_lr %<>% bind_rows(tt_q3_2022)
+# 
+# tt_q4_2021_lr %<>% bind_rows(tt_q1_2022_lr)
+# tt_q4_2021_lr %<>% bind_rows(tt_q2_2022_lr)
+# tt_q4_2021_lr %<>% bind_rows(tt_q3_2022_lr)
+# tt_q1_2021_lr <- tt_q4_2021_lr
+
+tt_q1_2021_lr <- read.csv("tt_q1_2021_lr_final.csv")
+tt_q1_2021_lr %<>% select(5,3,7,4,8,9)
+```
+
+```{r, fig.cap="Rapid Transit Travel Times"}
+head(tt_q1_2021_lr) 
+```
+
+
+```{r, include=FALSE}
+# write.csv(tt_q1_2021_lr, "tt_q1_2021_lr_final.csv")
+```
+
+
+## Graph
+
+I start the exploration on the MTBA data. At the beginning, I separate the subway by its `route_id` to different lines. 
+
+```{r}
+unique(tt_q1_2021_lr$route_id)
+```
+
+
+```{r, include=FALSE}
+green_b <- tt_q1_2021_lr %>% filter(route_id=="Green-B")
+green_c <- tt_q1_2021_lr %>% filter(route_id=="Green-C")
+green_d <- tt_q1_2021_lr %>% filter(route_id=="Green-D")
+green_e <- tt_q1_2021_lr %>% filter(route_id=="Green-E")
+orange <- tt_q1_2021_lr %>% filter(route_id=="Orange")
+blue <- tt_q1_2021_lr %>% filter(route_id=="Blue")
+red <- tt_q1_2021_lr %>% filter(route_id=="Red")
+```
+
+Take the Green-B line as an example:
+
+```{r, echo=FALSE}
+head(green_b)
+```
+
+Here is the graph of time distribution between stops that I would like to include in my shinyApp:
+
+```{r, echo=FALSE}
+green_b %<>% filter(from_stop_id=="70111" & to_stop_id=="70107")
+green_b %>% ggplot(aes(x=travel_time_sec)) +
+  geom_histogram(colour="black", fill="white") + 
+  ggtitle("Time Distribution graph") +
+  labs(x= "Time in Seconds")
+```
+
+In addition to graph, I would also like a summary table for the time distribution between specific stops.
+
+```{r}
+summary(green_b$travel_time_sec)
+```
+
+
+
+
+
+
+
